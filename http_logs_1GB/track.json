@@ -1,0 +1,77 @@
+{% import "rally.helpers" as rally with context %}
+
+{% set index_body = 'index.json' %}
+{% set query_range_ts_start = "893980800" %}
+{% set query_range_ts_end = "894067200" %}
+{% set search_after_ts = "897436800" %}
+{
+  "version": 2,
+  "description": "HTTP server log data",
+  "#TODO": "Replace index definitions with a template after setting the track version to 2. Explicit index definitions are not necessary anymore.",
+  "indices": [
+    {
+      "name": "logs-191998",
+      "body": "{{ index_body }}"
+    }
+  ],
+  "corpora": [
+      {
+        "name": "http_logs",
+        "base-url": "https://rally-tracks.elastic.co/http_logs",
+        "documents": [
+          {
+            "target-index": "logs-191998",
+            "source-file": "documents-191998.json.bz2",
+            "document-count": 9697882,
+            "compressed-bytes": 49546887,
+            "uncompressed-bytes": 1301732149
+          }
+        ]
+      }
+  ],
+  "operations": [
+    {
+      "name": "index-append",
+      "operation-type": "bulk",
+      "bulk-size": {{bulk_size | default(5000)}},
+      "ingest-percentage": {{ingest_percentage | default(82)}},
+      "corpora": "http_logs"
+    }
+  ],
+  "challenges": [
+    {
+      "name": "append-no-conflicts",
+      "description": "Indexes the whole document corpus using Elasticsearch default settings. We only adjust the number of replicas as we benchmark a single node cluster and Rally will only start the benchmark if the cluster turns green. Document ids are unique so all index operations are append only. After that a couple of queries are run.",
+      "default": true,
+      "schedule": [
+        {
+          "operation": "delete-index"
+        },
+        {
+          "operation": {
+            "operation-type": "create-index",
+            "settings": {{index_settings | default({}) | tojson}}
+          }
+        },
+        {
+          "name": "check-cluster-health",
+          "operation": {
+            "operation-type": "cluster-health",
+            "index": "logs-*",
+            "request-params": {
+              "wait_for_status": "{{cluster_health | default('green')}}",
+              "wait_for_no_relocating_shards": "true"
+            },
+            "retry-until-success": true
+          }
+        },
+        {
+          "operation": "index-append",
+          "warmup-time-period": 240,
+          "clients": {{bulk_indexing_clients | default(8)}},
+          "ignore-response-error-level": "{{error_level | default('non-fatal')}}"
+        }
+      ]
+    }
+  ]
+}
